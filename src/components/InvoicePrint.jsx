@@ -1,260 +1,386 @@
-import React from 'react';
-import { usePharmacy } from '../context/PharmacyContext';
-import { format } from 'date-fns';
-import { X } from 'lucide-react';
+import React, { useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { format } from "date-fns";
+import { Printer, Download, X } from "lucide-react";
+import html2pdf from "html2pdf.js";
+import { numberToWords } from "../utils/numberToWords";
 
-const InvoicePrint = ({ invoice, onClose }) => {
-    const { customers, settings } = usePharmacy();
-    const customer = customers.find(c => c.id === (invoice.customer_id || invoice.customerId));
+export default function InvoicePrint({ invoice, customer, settings, onClose }) {
+  const contentRef = useRef(null);
+  const [isGenerating, setIsGenerating] = useState(false);
 
-    // Calculations
-    const grossAmount = invoice.items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-    const discountAmount = invoice.items.reduce((sum, item) => {
-        const itemGross = item.price * item.quantity;
-        return sum + (itemGross * (item.discount || 0) / 100);
-    }, 0);
-    const invoiceTotal = grossAmount - discountAmount;
-    const previousBalance = customer?.balance || 0;
-    const totalAmount = invoiceTotal + previousBalance;
-    const totalItems = invoice.items.reduce((sum, item) => sum + item.quantity, 0);
+  // Destructure settings with defaults
+  const businessName = settings?.businessName || settings?.name || 'PHARMAPRO';
+  const address = settings?.address || 'N/A';
+  const phone = settings?.phone || 'N/A';
+  const license = settings?.license || 'L-123456';
 
-    // Convert number to words (simplified)
-    const numberToWords = (num) => {
-        const ones = ['', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine'];
-        const tens = ['', '', 'twenty', 'thirty', 'forty', 'fifty', 'sixty', 'seventy', 'eighty', 'ninety'];
-        const teens = ['ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen'];
+  // Safely calculate totals
+  const gross = invoice.items?.reduce(
+    (sum, item) => sum + (item.price || 0) * (item.quantity || 0),
+    0
+  ) || 0;
 
-        if (num === 0) return 'zero';
+  const discount = invoice.items?.reduce((sum, item) => {
+    return sum + ((item.price || 0) * (item.quantity || 0) * (item.discount || 0)) / 100;
+  }, 0) || 0;
 
-        let words = '';
-        const thousand = Math.floor(num / 1000);
-        const hundred = Math.floor((num % 1000) / 100);
-        const ten = Math.floor((num % 100) / 10);
-        const one = Math.floor(num % 10);
+  const invoiceLevelDiscount = invoice.discount || 0;
+  const totalDiscount = discount > 0 ? discount : invoiceLevelDiscount;
 
-        if (thousand > 0) {
-            words += ones[thousand] + ' thousand ';
-        }
-        if (hundred > 0) {
-            words += ones[hundred] + ' hundred ';
-        }
-        if (ten === 1) {
-            words += teens[one] + ' ';
-        } else {
-            if (ten > 0) words += tens[ten] + ' ';
-            if (one > 0) words += ones[one] + ' ';
-        }
+  const total = gross - totalDiscount;
+  const paymentMethod = invoice.payment_method || 'Cash';
+  const previousBalance = customer?.balance || 0;
+  const totalAmount = total; // Just the invoice total, not including previous balance
+  const amountInWords = numberToWords(totalAmount);
 
-        const decimal = Math.round((num - Math.floor(num)) * 100);
-        if (decimal > 0) {
-            words += `and ${decimal}/100`;
-        }
-
-        return `Rupees ${words.trim()} Only`;
+  // Keyboard shortcuts
+  React.useEffect(() => {
+    const handleKeyPress = (e) => {
+      if (e.key === 'Escape') {
+        onClose();
+      } else if ((e.ctrlKey || e.metaKey) && e.key === 'p') {
+        e.preventDefault();
+        handlePrint();
+      }
     };
 
-    const handlePrint = () => {
+    window.addEventListener('keydown', handleKeyPress);
+    return () => window.removeEventListener('keydown', handleKeyPress);
+  }, [onClose]);
+
+  const handlePrint = () => {
+    try {
+      // Small delay to ensure DOM is ready
+      setTimeout(() => {
         window.print();
+      }, 100);
+    } catch (error) {
+      console.error("Print failed:", error);
+      alert("Failed to open print dialog. Please try again.");
+    }
+  };
+
+  const handleDownload = async () => {
+    if (!contentRef.current) {
+      alert("Unable to generate PDF. Please try again.");
+      return;
+    }
+
+    setIsGenerating(true);
+
+    const element = contentRef.current;
+
+    // Enhanced PDF options for better quality
+    const opt = {
+      margin: [5, 5, 5, 5],
+      filename: `Invoice_${invoice.invoice_number || invoice.id.slice(0, 8)}.pdf`,
+      image: {
+        type: 'jpeg',
+        quality: 1.0
+      },
+      html2canvas: {
+        scale: 3,
+        useCORS: true,
+        logging: false,
+        backgroundColor: '#ffffff',
+        letterRendering: true,
+        allowTaint: false,
+        removeContainer: true
+      },
+      jsPDF: {
+        unit: 'mm',
+        format: 'a4',
+        orientation: 'portrait',
+        compress: true,
+        precision: 16
+      },
+      pagebreak: {
+        mode: ['avoid-all', 'css', 'legacy']
+      }
     };
 
-    return (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-y-auto">
-            <div className="bg-white w-full max-w-5xl shadow-2xl relative print:shadow-none print:max-w-none">
-                {/* Close button - hidden when printing */}
-                <button
-                    onClick={onClose}
-                    className="absolute top-4 right-4 p-2 hover:bg-gray-100 rounded-full print:hidden"
-                >
-                    <X size={24} />
-                </button>
+    try {
+      await html2pdf().set(opt).from(element).save();
 
-                {/* Print button - hidden when printing */}
-                <div className="p-4 border-b print:hidden">
-                    <button
-                        onClick={handlePrint}
-                        className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700"
-                    >
-                        Print Invoice
-                    </button>
-                </div>
+      // Success feedback
+      setTimeout(() => {
+        if (!isGenerating) {
+          alert("✅ Invoice PDF downloaded successfully!");
+        }
+      }, 500);
+    } catch (error) {
+      console.error("PDF generation failed:", error);
+      alert("❌ Failed to generate PDF. Please try printing instead (Ctrl/Cmd + P) and save as PDF.");
+    } finally {
+      setIsGenerating(false);
+    }
+  };
 
-                {/* Invoice Content */}
-                <div className="p-8 print:p-6">
-                    {/* Header */}
-                    <div className="border-2 border-black mb-4">
-                        <div className="flex justify-between items-start p-4">
-                            <div className="border-2 border-black px-4 py-2">
-                                <div className="font-bold text-lg">Estimate</div>
-                            </div>
-                            <div className="text-right">
-                                <h1 className="font-bold text-2xl uppercase">{settings?.name || 'PharmaPro'}</h1>
-                                <p className="text-sm">{settings?.address || 'Pharmacy Address'}</p>
-                                <p className="text-sm">Phone: {settings?.phone || 'N/A'}</p>
-                                <p className="text-sm">License: {settings?.license || 'N/A'}</p>
-                            </div>
-                        </div>
+  return createPortal(
+    <div className="invoice-print-modal fixed inset-0 z-[9999] bg-black/50 flex items-center justify-center p-4 print:p-0 print:bg-white print:block print:static">
+      {/* Toolbar - Enhanced Buttons */}
+      <div className="fixed top-4 right-4 flex gap-3 print:hidden z-50">
+        <button
+          onClick={handlePrint}
+          className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 shadow-lg transition-all hover:shadow-xl active:scale-95 font-semibold text-sm"
+          title="Print Invoice (Ctrl/Cmd + P)"
+        >
+          <Printer size={20} />
+          <span>🖨️ Print Invoice</span>
+        </button>
+        <button
+          onClick={handleDownload}
+          disabled={isGenerating}
+          className="flex items-center gap-2 px-6 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 shadow-lg transition-all hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-green-600 active:scale-95 font-semibold text-sm"
+          title="Download as PDF"
+        >
+          <Download size={20} />
+          <span>{isGenerating ? "📄 Generating PDF..." : "📥 Download PDF"}</span>
+        </button>
+        <button
+          onClick={onClose}
+          className="flex items-center gap-2 px-6 py-3 bg-gray-700 text-white rounded-lg hover:bg-gray-800 shadow-lg transition-all hover:shadow-xl active:scale-95 font-semibold text-sm"
+          title="Close (ESC)"
+        >
+          <X size={20} />
+          <span>✖️ Close</span>
+        </button>
+      </div>
 
-                        {/* Invoice Details Grid */}
-                        <div className="grid grid-cols-2 gap-4 p-4 border-t-2 border-black text-sm">
-                            <div className="space-y-1">
-                                <div className="flex">
-                                    <span className="font-bold w-32">Invoice #:</span>
-                                    <span>{invoice.invoice_number || invoice.id.slice(0, 8)}</span>
-                                </div>
-                                <div className="flex">
-                                    <span className="font-bold w-32">Invoice Date:</span>
-                                    <span>{format(new Date(invoice.date), 'dd/MM/yyyy')}</span>
-                                </div>
-                                <div className="flex">
-                                    <span className="font-bold w-32">Sale Order #:</span>
-                                    <span>{invoice.invoice_number || invoice.id.slice(0, 8)}</span>
-                                </div>
-                                <div className="flex">
-                                    <span className="font-bold w-32">Sale Order Type:</span>
-                                    <span>REGULAR</span>
-                                </div>
-                                <div className="flex">
-                                    <span className="font-bold w-32">Refrence Date:</span>
-                                    <span>{format(new Date(invoice.date), 'dd/MM/yyyy')}</span>
-                                </div>
-                                <div className="flex">
-                                    <span className="font-bold w-32">Receiving No:</span>
-                                    <span>-</span>
-                                </div>
-                            </div>
+      {/* Invoice Content */}
+      <div
+        className="bg-white w-full max-w-[210mm] min-h-[297mm] p-[15mm] shadow-2xl mx-auto overflow-y-auto max-h-[90vh] print:max-h-none print:shadow-none print:w-full print:h-auto print:overflow-visible print:p-6"
+        style={{ backgroundColor: '#ffffff' }}
+      >
+        <div ref={contentRef} className="invoice-print-content" style={{ color: '#000000', fontFamily: 'Arial, sans-serif', padding: '10px' }}>
 
-                            <div className="space-y-1">
-                                <div className="flex">
-                                    <span className="font-bold w-28">Customer:</span>
-                                    <span>{invoice.customer_name || customer?.name || 'Walk-in'}</span>
-                                </div>
-                                <div className="flex">
-                                    <span className="font-bold w-28">Region:</span>
-                                    <span>-</span>
-                                </div>
-                                <div className="flex">
-                                    <span className="font-bold w-28">License #:</span>
-                                    <span>-</span>
-                                </div>
-                                <div className="flex">
-                                    <span className="font-bold w-28">Delivery Man:</span>
-                                    <span>-</span>
-                                </div>
-                                <div className="flex">
-                                    <span className="font-bold w-28">Remarks:</span>
-                                    <span>{invoice.payment_method || 'Cash'}</span>
-                                </div>
-                                <div className="flex">
-                                    <span className="font-bold w-28">Ship To:</span>
-                                    <span>-</span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Items Table */}
-                    <table className="w-full border-2 border-black text-xs mb-4">
-                        <thead>
-                            <tr className="border-b-2 border-black bg-gray-100">
-                                <th className="border-r border-black p-1 text-left">Item Code</th>
-                                <th className="border-r border-black p-1 text-left">Item Name</th>
-                                <th className="border-r border-black p-1 text-center">Batch</th>
-                                <th className="border-r border-black p-1 text-center">Expiry</th>
-                                <th className="border-r border-black p-1 text-right">Quantity</th>
-                                <th className="border-r border-black p-1 text-right">Bonus</th>
-                                <th className="border-r border-black p-1 text-right">Rate</th>
-                                <th className="border-r border-black p-1 text-right">Gross</th>
-                                <th className="border-r border-black p-1 text-right">Disc%</th>
-                                <th className="p-1 text-right">Net Amount</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {invoice.items.map((item, idx) => {
-                                const itemGross = item.price * item.quantity;
-                                const itemDiscount = (itemGross * (item.discount || 0)) / 100;
-                                const netAmount = itemGross - itemDiscount;
-
-                                return (
-                                    <tr key={idx} className="border-b border-gray-300">
-                                        <td className="border-r border-black p-1">{item.item_code || item.itemCode || '-'}</td>
-                                        <td className="border-r border-black p-1">{item.name}</td>
-                                        <td className="border-r border-black p-1 text-center">{item.batch}</td>
-                                        <td className="border-r border-black p-1 text-center">{item.expiry}</td>
-                                        <td className="border-r border-black p-1 text-right">{item.quantity}</td>
-                                        <td className="border-r border-black p-1 text-right">{item.bonus || 0}</td>
-                                        <td className="border-r border-black p-1 text-right">{item.price.toFixed(2)}</td>
-                                        <td className="border-r border-black p-1 text-right">{itemGross.toFixed(2)}</td>
-                                        <td className="border-r border-black p-1 text-right">{(item.discount || 0).toFixed(2)}</td>
-                                        <td className="p-1 text-right font-bold">{netAmount.toFixed(2)}</td>
-                                    </tr>
-                                );
-                            })}
-                            <tr className="border-t-2 border-black font-bold">
-                                <td colSpan="4" className="border-r border-black p-1">Total Items: {totalItems}</td>
-                                <td className="border-r border-black p-1 text-right">{totalItems}</td>
-                                <td className="border-r border-black p-1"></td>
-                                <td className="border-r border-black p-1"></td>
-                                <td className="border-r border-black p-1"></td>
-                                <td className="border-r border-black p-1"></td>
-                                <td className="p-1 text-right">{invoiceTotal.toFixed(2)}</td>
-                            </tr>
-                        </tbody>
-                    </table>
-
-                    {/* Footer */}
-                    <div className="flex justify-between items-start">
-                        <div className="text-sm">
-                            <p className="font-bold">Previous Balance: ={previousBalance.toFixed(2)}</p>
-                            <p className="text-xs mt-2">Page 1 of 1</p>
-                        </div>
-
-                        <div className="text-right space-y-1 text-sm">
-                            <div className="flex justify-between gap-8">
-                                <span className="font-bold">Gross Amount:</span>
-                                <span>={grossAmount.toFixed(2)}</span>
-                            </div>
-                            <div className="flex justify-between gap-8">
-                                <span className="font-bold">Discount Amount:</span>
-                                <span>={discountAmount.toFixed(2)}</span>
-                            </div>
-                            <div className="flex justify-between gap-8 border-t border-black pt-1">
-                                <span className="font-bold">Invoice Total:</span>
-                                <span className="font-bold">{invoiceTotal.toFixed(2)}</span>
-                            </div>
-                            <div className="flex justify-between gap-8">
-                                <span className="font-bold">Credit Note:</span>
-                                <span>0.00</span>
-                            </div>
-                            <div className="flex justify-between gap-8 border-t-2 border-black pt-1">
-                                <span className="font-bold">Total Amount:</span>
-                                <span className="font-bold text-lg">{totalAmount.toFixed(2)}</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Amount in Words */}
-                    <div className="mt-4 border-t-2 border-black pt-2 text-sm">
-                        <p className="text-center">--{numberToWords(totalAmount)}--</p>
-                    </div>
-                </div>
+          {/* HEADER */}
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'flex-start',
+            borderBottom: '2px solid #000',
+            paddingBottom: '15px',
+            marginBottom: '15px'
+          }}>
+            {/* Left - Estimate Box */}
+            <div style={{
+              border: '2px solid #000',
+              padding: '8px 25px',
+              fontSize: '16px',
+              fontWeight: 'bold'
+            }}>
+              Estimate
             </div>
 
-            <style jsx>{`
-                @media print {
-                    body * {
-                        visibility: hidden;
-                    }
-                    .print\\:block, .print\\:block * {
-                        visibility: visible;
-                    }
-                    @page {
-                        size: A4;
-                        margin: 0.5cm;
-                    }
-                }
-            `}</style>
-        </div>
-    );
-};
+            {/* Right - Company Info */}
+            <div style={{ textAlign: 'right', fontSize: '11px' }}>
+              <div style={{ fontSize: '20px', fontWeight: 'bold', marginBottom: '5px' }}>
+                {businessName}
+              </div>
+              <div>{address}</div>
+              <div>Phone: {phone}</div>
+              <div>License: {license}</div>
+            </div>
+          </div>
 
-export default InvoicePrint;
+          {/* INVOICE INFO - Two Columns */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr',
+            gap: '20px',
+            border: '2px solid #000',
+            padding: '15px',
+            marginBottom: '15px',
+            fontSize: '11px'
+          }}>
+            {/* Left Column */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+              <div style={{ display: 'flex' }}>
+                <span style={{ fontWeight: 'bold', width: '130px' }}>Invoice #:</span>
+                <span>{invoice.invoice_number || invoice.id.slice(0, 8)}</span>
+              </div>
+              <div style={{ display: 'flex' }}>
+                <span style={{ fontWeight: 'bold', width: '130px' }}>Invoice Date:</span>
+                <span>{format(new Date(invoice.date), "dd/MM/yyyy")}</span>
+              </div>
+              <div style={{ display: 'flex' }}>
+                <span style={{ fontWeight: 'bold', width: '130px' }}>Sale Order #:</span>
+                <span>{invoice.invoice_number || invoice.id.slice(0, 8)}</span>
+              </div>
+              <div style={{ display: 'flex' }}>
+                <span style={{ fontWeight: 'bold', width: '130px' }}>Sale Order Type:</span>
+                <span>REGULAR</span>
+              </div>
+              <div style={{ display: 'flex' }}>
+                <span style={{ fontWeight: 'bold', width: '130px' }}>Refrence Date:</span>
+                <span>{format(new Date(invoice.date), "dd/MM/yyyy")}</span>
+              </div>
+              <div style={{ display: 'flex' }}>
+                <span style={{ fontWeight: 'bold', width: '130px' }}>Receiving No:</span>
+                <span>-</span>
+              </div>
+            </div>
+
+            {/* Right Column */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+              <div style={{ display: 'flex' }}>
+                <span style={{ fontWeight: 'bold', width: '130px' }}>Customer:</span>
+                <span>{customer?.name || invoice.customer_name || 'Walk-in'}</span>
+              </div>
+              <div style={{ display: 'flex' }}>
+                <span style={{ fontWeight: 'bold', width: '130px' }}>Region:</span>
+                <span>{customer?.region || '-'}</span>
+              </div>
+              <div style={{ display: 'flex' }}>
+                <span style={{ fontWeight: 'bold', width: '130px' }}>License #:</span>
+                <span>-</span>
+              </div>
+              <div style={{ display: 'flex' }}>
+                <span style={{ fontWeight: 'bold', width: '130px' }}>Delivery Man:</span>
+                <span>-</span>
+              </div>
+              <div style={{ display: 'flex' }}>
+                <span style={{ fontWeight: 'bold', width: '130px' }}>Remarks:</span>
+                <span>{paymentMethod}</span>
+              </div>
+              <div style={{ display: 'flex' }}>
+                <span style={{ fontWeight: 'bold', width: '130px' }}>Ship To:</span>
+                <span>-</span>
+              </div>
+            </div>
+          </div>
+
+          {/* ITEMS TABLE */}
+          <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '10px', fontSize: '10px' }}>
+            <thead>
+              <tr style={{ backgroundColor: '#ffffff', borderTop: '2px solid #000', borderBottom: '2px solid #000' }}>
+                <th style={{ border: '1px solid #000', padding: '6px 4px', textAlign: 'left', fontWeight: 'bold' }}>Item Code</th>
+                <th style={{ border: '1px solid #000', padding: '6px 4px', textAlign: 'left', fontWeight: 'bold' }}>Item Name</th>
+                <th style={{ border: '1px solid #000', padding: '6px 4px', textAlign: 'center', fontWeight: 'bold' }}>Batch</th>
+                <th style={{ border: '1px solid #000', padding: '6px 4px', textAlign: 'center', fontWeight: 'bold' }}>Expiry</th>
+                <th style={{ border: '1px solid #000', padding: '6px 4px', textAlign: 'center', fontWeight: 'bold' }}>Quantity</th>
+                <th style={{ border: '1px solid #000', padding: '6px 4px', textAlign: 'center', fontWeight: 'bold' }}>Bonus</th>
+                <th style={{ border: '1px solid #000', padding: '6px 4px', textAlign: 'right', fontWeight: 'bold' }}>Rate</th>
+                <th style={{ border: '1px solid #000', padding: '6px 4px', textAlign: 'right', fontWeight: 'bold' }}>Gross</th>
+                <th style={{ border: '1px solid #000', padding: '6px 4px', textAlign: 'center', fontWeight: 'bold' }}>Disc%</th>
+                <th style={{ border: '1px solid #000', padding: '6px 4px', textAlign: 'right', fontWeight: 'bold' }}>Net Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              {invoice.items && invoice.items.length > 0 ? (
+                invoice.items.map((item, idx) => {
+                  const itemGross = (item.price || 0) * (item.quantity || 0);
+                  const itemDiscount = (item.discount || 0);
+                  const itemNet = itemGross - (itemGross * itemDiscount / 100);
+
+                  return (
+                    <tr key={idx}>
+                      <td style={{ border: '1px solid #000', padding: '4px', textAlign: 'left' }}>
+                        {item.item_code || item.itemCode || 'N/A'}
+                      </td>
+                      <td style={{ border: '1px solid #000', padding: '4px', textAlign: 'left' }}>
+                        {item.name}
+                      </td>
+                      <td style={{ border: '1px solid #000', padding: '4px', textAlign: 'center' }}>
+                        {item.batch || '-'}
+                      </td>
+                      <td style={{ border: '1px solid #000', padding: '4px', textAlign: 'center', fontSize: '9px' }}>
+                        {item.expiry ? format(new Date(item.expiry), "yyyy-MM-dd") : '-'}
+                      </td>
+                      <td style={{ border: '1px solid #000', padding: '4px', textAlign: 'center' }}>
+                        {item.quantity}
+                      </td>
+                      <td style={{ border: '1px solid #000', padding: '4px', textAlign: 'center' }}>
+                        {item.bonus || 0}
+                      </td>
+                      <td style={{ border: '1px solid #000', padding: '4px', textAlign: 'right' }}>
+                        {(item.price || 0).toFixed(2)}
+                      </td>
+                      <td style={{ border: '1px solid #000', padding: '4px', textAlign: 'right' }}>
+                        {itemGross.toFixed(2)}
+                      </td>
+                      <td style={{ border: '1px solid #000', padding: '4px', textAlign: 'center' }}>
+                        {itemDiscount.toFixed(2)}
+                      </td>
+                      <td style={{ border: '1px solid #000', padding: '4px', textAlign: 'right', fontWeight: 'bold' }}>
+                        {itemNet.toFixed(2)}
+                      </td>
+                    </tr>
+                  );
+                })
+              ) : (
+                <tr>
+                  <td colSpan="10" style={{ border: '1px solid #000', padding: '20px', textAlign: 'center' }}>
+                    No items found
+                  </td>
+                </tr>
+              )}
+
+              {/* Total Row */}
+              <tr style={{ borderTop: '2px solid #000' }}>
+                <td colSpan="4" style={{ border: '1px solid #000', padding: '6px 4px', fontWeight: 'bold' }}>
+                  Total Items: {invoice.items?.length || 0}
+                </td>
+                <td style={{ border: '1px solid #000', padding: '6px 4px', textAlign: 'center', fontWeight: 'bold' }}>
+                  {invoice.items?.reduce((sum, item) => sum + (item.quantity || 0), 0) || 0}
+                </td>
+                <td colSpan="4" style={{ border: '1px solid #000', padding: '6px 4px', textAlign: 'right' }}></td>
+                <td style={{ border: '1px solid #000', padding: '6px 4px', textAlign: 'right', fontWeight: 'bold' }}>
+                  {total.toFixed(2)}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+
+          {/* FOOTER SECTION */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '20px', fontSize: '11px' }}>
+            {/* Left - Previous Balance */}
+            <div>
+              <strong>Previous Balance: </strong>=Rs. {previousBalance.toFixed(2)}
+            </div>
+
+            {/* Right - Totals */}
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ marginBottom: '3px' }}>
+                <strong>Gross Amount:</strong> <span style={{ marginLeft: '30px' }}>=Rs. {gross.toFixed(2)}</span>
+              </div>
+              <div style={{ marginBottom: '3px' }}>
+                <strong>Discount Amount:</strong> <span style={{ marginLeft: '30px' }}>=Rs. {totalDiscount.toFixed(2)}</span>
+              </div>
+              <div style={{ marginBottom: '3px' }}>
+                <strong>Invoice Total:</strong> <span style={{ marginLeft: '30px' }}>{total.toFixed(2)}</span>
+              </div>
+              <div style={{ marginBottom: '3px' }}>
+                <strong>Credit Note:</strong> <span style={{ marginLeft: '30px' }}>0.00</span>
+              </div>
+              <div style={{ fontSize: '13px', fontWeight: 'bold', marginTop: '5px' }}>
+                <strong>Total Amount:</strong> <span style={{ marginLeft: '30px' }}>{totalAmount.toFixed(2)}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* AMOUNT IN WORDS */}
+          <div style={{
+            textAlign: 'center',
+            marginTop: '30px',
+            marginBottom: '15px',
+            fontSize: '11px',
+            borderTop: '1px solid #000',
+            borderBottom: '1px solid #000',
+            padding: '8px 0'
+          }}>
+            --{amountInWords}--
+          </div>
+
+          {/* PAGE NUMBER */}
+          <div style={{ fontSize: '10px', color: '#666', marginTop: '10px' }}>
+            Page 1 of 1
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}

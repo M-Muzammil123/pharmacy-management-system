@@ -145,3 +145,107 @@
     cursor: grabbing;
   }
 }
+
+/* Print styles for invoices */
+@media print {
+
+  /* Make sure body and html are visible */
+  html,
+  body {
+    background: white !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Hide everything except invoice modal */
+  body>*:not(.invoice-print-modal) {
+    display: none !important;
+  }
+
+  /* Force invoice modal to be visible */
+  .invoice-print-modal {
+    display: block !important;
+    position: static !important;
+    background: white !important;
+    padding: 15mm !important;
+    margin: 0 !important;
+    box-shadow: none !important;
+    max-width: none !important;
+    width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+
+  /* Force inner content to be visible */
+  .invoice-print-modal *,
+  .invoice-print-content,
+  .invoice-print-content * {
+    visibility: visible !important;
+    opacity: 1 !important;
+  }
+
+  /* Hide all buttons */
+  button {
+    display: none !important;
+  }
+
+  /* Ensure tables are visible */
+  table,
+  thead,
+  tbody,
+  tr,
+  td,
+  th {
+    display: table !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+  }
+
+  thead {
+    display: table-header-group !important;
+  }
+
+  tbody {
+    display: table-row-group !important;
+  }
+
+  tr {
+    display: table-row !important;
+  }
+
+  td,
+  th {
+    display: table-cell !important;
+  }
+
+  /* Page break utilities */
+  .page-break-before {
+    page-break-before: always !important;
+  }
+
+  .page-break-after {
+    page-break-after: always !important;
+  }
+
+  .page-break-inside-avoid {
+    page-break-inside: avoid !important;
+  }
+
+  /* Avoid breaking table rows */
+  tr {
+    page-break-inside: avoid !important;
+  }
+
+  /* Force background colors to print */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Ensure borders are visible */
+  [style*="border"] {
+    border-color: #000 !important;
+  }
+}

@@ -31,7 +31,8 @@ export const PharmacyProvider = ({ children }) => {
             name: 'PharmaPro',
             address: '123 Medical Center, Main Road',
             phone: '0300-0000000',
-            license: 'L-123456'
+            license: 'L-123456',
+            invoiceNotes: 'Thank you for your business!'
         };
     });
 
@@ -211,12 +212,17 @@ export const PharmacyProvider = ({ children }) => {
         return newInvoice.invoice_number;
     };
 
+    const deleteInvoice = async (id) => {
+        await db.deleteInvoice(id);
+        setInvoices(prev => prev.filter(inv => inv.id !== id));
+    };
+
     return (
         <PharmacyContext.Provider value={{
             products, addProduct, updateProduct, deleteProduct,
             customers, addCustomer, updateCustomer, deleteCustomer,
             cart, addToCart, removeFromCart, updateCartItem, clearCart,
-            invoices, completeSale,
+            invoices, completeSale, deleteInvoice,
             settings, setSettings,
             loading
         }}>

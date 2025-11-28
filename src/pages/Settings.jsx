@@ -8,7 +8,8 @@ const Settings = () => {
         name: '',
         address: '',
         phone: '',
-        license: ''
+        license: '',
+        invoiceNotes: ''
     });
 
     useEffect(() => {
@@ -93,6 +94,21 @@ const Settings = () => {
                                 placeholder="e.g. L-123456"
                             />
                         </div>
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-2">
+                            <FileText size={16} />
+                            Invoice Notes
+                        </label>
+                        <textarea
+                            rows="2"
+                            value={formData.invoiceNotes || ''}
+                            onChange={e => setFormData({ ...formData, invoiceNotes: e.target.value })}
+                            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            placeholder="e.g. Thank you for your business!"
+                        />
+                        <p className="text-xs text-gray-500 mt-1">This message will appear on all invoices</p>
                     </div>
 
                     <div className="pt-6 border-t border-gray-100">

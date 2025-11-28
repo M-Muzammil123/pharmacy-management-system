@@ -1,10 +1,11 @@
-const { app, BrowserWindow } = require('electron');
-const path = require('path');
+import { app, BrowserWindow } from 'electron';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
 
-// Handle creating/removing shortcuts on Windows when installing/uninstalling.
-if (require('electron-squirrel-startup')) {
-    app.quit();
-}
+// Get __dirname equivalent in ES modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 function createWindow() {
     // Create the browser window.
@@ -26,6 +27,14 @@ function createWindow() {
         mainWindow.webContents.openDevTools();
     } else {
         mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
+
+        // Enable DevTools in production with keyboard shortcut for debugging
+        mainWindow.webContents.on('before-input-event', (event, input) => {
+            if (input.control && input.shift && input.key.toLowerCase() === 'i') {
+                mainWindow.webContents.toggleDevTools();
+                event.preventDefault();
+            }
+        });
     }
 }
 

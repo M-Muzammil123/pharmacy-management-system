@@ -57,7 +57,7 @@ const MainLayout = ({ children }) => {
                     ))}
                 </nav>
                 <div className="p-4 border-t border-gray-100">
-                    <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                    <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg mb-2">
                         <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold">
                             AD
                         </div>
@@ -65,6 +65,21 @@ const MainLayout = ({ children }) => {
                             <p className="text-sm font-semibold text-gray-900">Admin User</p>
                             <p className="text-xs text-gray-500">Pharmacist</p>
                         </div>
+                    </div>
+
+                    {/* Database Status Indicator */}
+                    <div className="px-1">
+                        {(settings?.dbUrl && settings?.apiKey) || import.meta.env.VITE_SUPABASE_URL ? (
+                            <div className="flex items-center gap-2 text-xs text-green-600 font-medium">
+                                <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+                                Online
+                            </div>
+                        ) : (
+                            <Link to="/settings" className="flex items-center gap-2 text-xs text-amber-600 font-medium hover:text-amber-700">
+                                <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+                                Offline Mode
+                            </Link>
+                        )}
                     </div>
                 </div>
             </aside>

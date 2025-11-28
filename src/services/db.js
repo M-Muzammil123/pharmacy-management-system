@@ -175,9 +175,21 @@ export const deleteCustomer = async (id) => {
 // --- Invoices ---
 export const getInvoices = async () => {
     if (shouldUseDB()) {
-        const { data, error } = await getSupabase().from('invoices').select('*, items:invoice_items(*)').order('date', { ascending: false });
+        const { data, error } = await getSupabase()
+            .from('invoices')
+            .select('*, invoice_items(*)')
+            .order('date', { ascending: false });
+
         if (error) throw error;
-        return data;
+
+        // Map the invoice_items to items for consistency
+        const mappedInvoices = data.map(invoice => ({
+            ...invoice,
+            items: invoice.invoice_items || []
+        }));
+
+        console.log('Loaded invoices from DB:', mappedInvoices);
+        return mappedInvoices;
     }
     const saved = localStorage.getItem('pharmacy_invoices');
     return saved ? JSON.parse(saved) : [];
@@ -241,6 +253,22 @@ export const saveInvoice = async (invoice) => {
     const updated = [invoice, ...invoices];
     localStorage.setItem('pharmacy_invoices', JSON.stringify(updated));
     return invoice;
+};
+
+export const deleteInvoice = async (id) => {
+    if (shouldUseDB()) {
+        // Delete invoice items first (foreign key constraint)
+        const { error: itemsError } = await getSupabase().from('invoice_items').delete().eq('invoice_id', id);
+        if (itemsError) throw itemsError;
+
+        // Then delete the invoice
+        const { error } = await getSupabase().from('invoices').delete().eq('id', id);
+        if (error) throw error;
+        return;
+    }
+    const invoices = await getInvoices();
+    const updated = invoices.filter(inv => inv.id !== id);
+    localStorage.setItem('pharmacy_invoices', JSON.stringify(updated));
 };
 
 // --- Suppliers ---
